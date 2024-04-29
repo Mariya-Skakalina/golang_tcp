@@ -29,7 +29,8 @@ func main() {
 			log.Fatal(err)
 			os.Exit(1)
 		}
-		handlerRequest(conn)
+		// Запуск нескольких клиентов
+		go handlerRequest(conn)
 	}
 
 }

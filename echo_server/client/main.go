@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"net"
 	"os"
 )
@@ -17,7 +18,7 @@ func main() {
 	tcpServer, err := net.ResolveTCPAddr(type_serv, host+":"+port)
 
 	if err != nil {
-		fmt.Println("ResolveTCPAddr failed:", err.Error())
+		log.Fatal(err)
 		os.Exit(1)
 	}
 	// Этот код пытается установить TCP-соединение с удаленным сервером
@@ -25,10 +26,11 @@ func main() {
 		conn, err := net.DialTCP(type_serv, nil, tcpServer)
 		defer conn.Close()
 		if err != nil {
-			fmt.Println("Dial failed:", err.Error())
+			log.Fatal(err)
 			os.Exit(1)
 		}
-		handlerRequest(conn)
+
+		go handlerRequest(conn)
 	}
 }
 
