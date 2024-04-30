@@ -1,64 +1,56 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"log"
 	"net"
 	"os"
+	"strings"
 )
 
 var (
-	host      = "localhost"
-	port      = "8000"
-	type_serv = "tcp"
+	host     = "localhost"
+	port     = "8000"
+	typeServ = "tcp"
 )
 
 func main() {
-	// net.ResolveTCPAddr используется для преобразования сетевого адреса
-	tcpServer, err := net.ResolveTCPAddr(type_serv, host+":"+port)
+	conn, err := net.Dial(typeServ, host+":"+port)
 	if err != nil {
 		log.Fatal(err)
-		os.Exit(1)
 	}
 
-	// Этот код пытается установить TCP-соединение с удаленным сервером
-	conn, err := net.DialTCP(type_serv, nil, tcpServer)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
-	}
 	defer conn.Close()
 
-	log.Printf("Connected to server %s:%s\n", host, port)
+	reader := bufio.NewReader(conn)
+	go receiveMessages(reader)
 
-	// Запускаем обработку сообщений от сервера в отдельной горутине
-	go handleServerMessages(conn)
+	fmt.Print("Введите свое имя: ")
+	name, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	name = strings.TrimSpace(name)
+	fmt.Fprintf(conn, "%s\n", name)
 
-	// Отправляем сообщения серверу
 	for {
-		var message string
-		fmt.Print("Enter message: ")
-		fmt.Scanln(&message)
+		fmt.Print("Введите ваше сообщение: ")
+		message, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		message = strings.TrimSpace(message)
 
-		_, err := conn.Write([]byte(message))
-		if err != nil {
-			log.Println("Write error:", err)
+		if message == "exit" {
 			break
 		}
+
+		fmt.Fprintf(conn, "%s\n", message)
 	}
 }
 
-// Функция для обработки сообщений от сервера
-func handleServerMessages(conn net.Conn) {
-	buffer := make([]byte, 1024)
+func receiveMessages(reader *bufio.Reader) {
 	for {
-		// Читаем сообщение от сервера
-		n, err := conn.Read(buffer)
+		message, err := reader.ReadString('\n')
 		if err != nil {
-			log.Println("Read error:", err)
+			log.Println(err)
 			break
 		}
-		serverMessage := string(buffer[:n])
-		log.Printf("Message from server: %s\n", serverMessage)
+		fmt.Print(message)
 	}
 }

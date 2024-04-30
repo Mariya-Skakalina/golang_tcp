@@ -1,79 +1,110 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
 	"log"
 	"net"
-	"os"
+	"strings"
+	"sync"
 )
 
 var (
-	host      = "localhost"
-	port      = "8000"
-	type_serv = "tcp"
+	host     = "localhost"
+	port     = "8000"
+	typeServ = "tcp"
 )
 
-// Мапа для хранения соединений клиентов
-var connsClient = make(map[net.Conn]string)
-
-func main() {
-	// Устанавливаем соединение
-	listen, err := net.Listen(type_serv, host+":"+port)
-	if err != nil {
-		log.Fatal(err)
-		os.Exit(1)
-	}
-	defer listen.Close()
-
-	log.Printf("Server started at %s:%s\n", host, port)
-
-	// Запускаем обработку подключений в отдельной горутине
-	go handleConnections(listen)
-
-	// Бесконечный цикл для ожидания сигнала завершения программы
-	select {}
+// Определяем структуру клиента
+type Client struct {
+	Name string
+	Conn net.Conn
 }
 
-// Функция для обработки подключений клиентов
-func handleConnections(listener net.Listener) {
+// Список клиентов
+var clients []Client
+var mu sync.Mutex
+
+func main() {
+	// Установка соединения
+	listener, err := net.Listen(typeServ, host+":"+port)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer listener.Close()
+
+	log.Printf("Server started on %s:%s\n", host, port)
+
+	// Подключение
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Fatal(err)
-			os.Exit(1)
+			log.Println(err)
+			continue
 		}
-		log.Printf("Client connected from %s\n", conn.RemoteAddr())
 
-		// Добавляем соединение клиента в мапу
-		connsClient[conn] = conn.RemoteAddr().String()
-
-		// Запускаем обработку сообщений от клиента в отдельной горутине
-		go handleClientMessages(conn)
+		go handleConnection(conn)
 	}
 }
 
-// Функция для обработки сообщений от клиента
-func handleClientMessages(conn net.Conn) {
+func handleConnection(conn net.Conn) {
 	defer conn.Close()
+	// Чтение пользовательских данных
+	reader := bufio.NewReader(conn)
+	fmt.Fprintf(conn, "Сообщение отправил пользователь по имени, ")
+	name, _ := reader.ReadString('\n')
+	name = strings.TrimSpace(name)
 
-	buffer := make([]byte, 1024)
+	client := Client{Name: name, Conn: conn}
+
+	mu.Lock()
+	clients = append(clients, client)
+	mu.Unlock()
+
+	log.Printf("%s connected\n", name)
+
+	// Чтение сообщений
 	for {
-		// Читаем сообщение от клиента
-		n, err := conn.Read(buffer)
+		message, err := reader.ReadString('\n')
 		if err != nil {
-			log.Println("Read error:", err)
+			log.Println(err)
 			break
 		}
-		clientMessage := string(buffer[:n])
-		log.Printf("Message from %s: %s\n", conn.RemoteAddr(), clientMessage)
 
-		// Отправляем сообщение от клиента всем остальным клиентам
-		for c, _ := range connsClient {
-			if c != conn {
-				_, err := c.Write([]byte(clientMessage))
-				if err != nil {
-					log.Println("Write error:", err)
-				}
-			}
+		message = strings.TrimSpace(message)
+
+		if message == "exit" {
+			break
+		}
+
+		broadcastMessage(name, message)
+	}
+
+	removeClient(client)
+	log.Printf("%s disconnected\n", name)
+}
+
+// Рассылка сообщений всем клиентам
+func broadcastMessage(senderName, message string) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	for _, client := range clients {
+		if client.Name != senderName {
+			fmt.Fprintf(client.Conn, "%s: %s\n", senderName, message)
+		}
+	}
+}
+
+// Удаление вышедшего клиента
+func removeClient(client Client) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	for i, c := range clients {
+		if c == client {
+			clients = append(clients[:i], clients[i+1:]...)
+			break
 		}
 	}
 }
