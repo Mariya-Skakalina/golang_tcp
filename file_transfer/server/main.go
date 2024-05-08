@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"os"
+	"strings"
 	"sync"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -17,7 +21,7 @@ var (
 )
 
 func init() {
-	fmt.Println("Hello")
+	fmt.Println("Woo")
 }
 
 func main() {
@@ -28,7 +32,6 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-
 	}
 
 	listener, err := net.Listen(typeServ, host+":"+port)
@@ -51,6 +54,7 @@ func main() {
 }
 
 type File struct {
+	ID   uuid.UUID
 	Name string
 	Path string
 }
@@ -58,31 +62,98 @@ type File struct {
 var files []File
 
 func handleConnection(conn net.Conn) {
+	defer conn.Close()
 
-	// Создаем файл для сохранения данных
-	filePath := "uploads/ recieved_file.jpeg"
+	reader := bufio.NewReader(conn)
+	for {
+		command, err := reader.ReadString('\n')
+		if err != nil {
+			if err != io.EOF {
+				log.Println("Ошибка чтения команды:", err)
+			}
+			return
+		}
+		command = strings.TrimSpace(command)
+
+		switch command {
+		case "upload":
+			upload(conn, reader)
+		case "download":
+			download(conn, reader)
+		case "all_files":
+			all_files(conn)
+		default:
+			log.Println("Неизвестная команда:", command)
+			return
+		}
+	}
+}
+
+func upload(conn net.Conn, reader *bufio.Reader) {
+	var id = uuid.New()
+
+	name_file, err := reader.ReadString('\n')
+	if err != nil {
+		log.Println("Ошибка чтения имени файла:", err)
+		return
+	}
+	name_file = strings.TrimSpace(name_file)
+
+	if name_file == "" {
+		log.Println("Имя файла не может быть пустым")
+		return
+	}
+
+	filePath := fmt.Sprintf("uploads/%s.jpeg", id.String())
 	file, err := os.Create(filePath)
 	if err != nil {
-		log.Println("Error creating file:", err)
+		log.Println("Ошибка создания файла:", err)
 		return
 	}
 	defer file.Close()
 
+	var file_instance = File{
+		ID:   id,
+		Name: name_file,
+		Path: filePath,
+	}
+
+	mu.Lock()
+	files = append(files, file_instance)
+	mu.Unlock()
+
 	// Копируем данные из соединения в файл
-	_, err = io.Copy(file, conn)
-	fmt.Println(conn)
+	_, err = io.Copy(file, reader)
 	if err != nil {
-		log.Println("Error copying data:", err)
+		log.Println("Ошибка копирования данных:", err)
 		return
 	}
-	log.Println("File received and saved:", filePath)
+	conn.Close()
+
+	confirmation := "Файл успешно загружен\n"
+	if _, err := conn.Write([]byte(confirmation)); err != nil {
+		log.Println("Ошибка отправки подтверждения:", err)
+		return
+	}
+	log.Println("Подтверждение отправлено клиенту")
+
+	log.Println("Файл получен и сохранен:", filePath)
 }
 
-// Протокол передачи данных: Выберите протокол для передачи файлов между сервером и клиентами. В данном случае можно использовать TCP/IP, так как он обеспечивает надежное и устойчивое соединение для передачи файлов.
-// Протокол коммуникации: Определите, как клиенты будут взаимодействовать с сервером для передачи и загрузки файлов. Например, клиенты могут отправлять команды серверу для загрузки, скачивания или удаления файлов.
-// Структура данных: Определите формат сообщений, которые будут обмениваться между клиентами и сервером. Например, клиент может отправлять запросы на загрузку файла с указанием имени файла и данных файла, а сервер должен ответить подтверждением или ошибкой.
-// Безопасность: Обеспечьте безопасность передачи файлов, чтобы предотвратить несанкционированный доступ к файлам и их повреждение в процессе передачи.
-// Управление соединениями: Реализуйте механизмы для управления соединениями между сервером и клиентами, чтобы обеспечить стабильную работу при передаче больших файлов и при обработке множества запросов.
-// Обработка ошибок: Разработайте стратегии обработки ошибок, чтобы обеспечить надежную работу системы при возникновении сетевых сбоев или ошибок в процессе передачи файлов.
-// Хранение файлов: Решите, как будут храниться файлы на сервере. Например, вы можете хранить их в виде обычных файлов в файловой системе сервера или использовать базу данных для управления файлами.
-// Тестирование: Проведите тестирование всей системы, чтобы убедиться, что она работает правильно и эффективно. Это включает в себя тестирование функциональности, производительности и безопасности.
+func download(conn net.Conn, reader *bufio.Reader) {
+
+}
+
+func all_files(conn net.Conn) {
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Отправляем количество файлов
+	count := len(files)
+	conn.Write([]byte(fmt.Sprintf("%d\n", count)))
+
+	// Отправляем имена файлов
+	for _, file := range files {
+		conn.Write([]byte(file.Name + "\n"))
+	}
+}
