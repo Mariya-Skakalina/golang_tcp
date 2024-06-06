@@ -3,77 +3,67 @@ package commands
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"net"
+	"os"
+	"strings"
 )
 
-// const (
-// 	chunkSize = 4096 // Размер каждой части файла
-// )
-
 func Upload(conn net.Conn) {
-
-	info, err := bufio.NewReader(conn).ReadBytes('\n')
+	request := bufio.NewReader(conn)
+	responce, err := request.ReadString('\n')
 	if err != nil {
-		log.Println("Error text to server")
+		log.Println("Ошибка записи имени файла: ", err)
 	}
-	fmt.Println("Answer to server: ", info)
+	fmt.Println(responce)
 
-	if _, err = conn.Write([]byte("Hello from client\n")); err != nil {
-		log.Println("error send qnswer from server", err)
+	readerf := bufio.NewReader(os.Stdin)
+	nameFile, err := readerf.ReadString('\n')
+	if err != nil {
+		log.Println("Ошибка чтения имени файла: ", err)
+	}
+	nameFile = strings.TrimSpace(nameFile)
+	fmt.Fprintln(conn, nameFile)
+
+	requestPath := bufio.NewReader(conn)
+	responcePath, err := requestPath.ReadString('\n')
+	if err != nil {
+		log.Println("Ошибка сохранения файла или файл не найден: ", err)
+	}
+	fmt.Println(responcePath)
+
+	filePath, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	filePath = strings.TrimSpace(filePath)
+	if err != nil {
+		log.Println("Ошибка пути файла: ", err)
 	}
 
-	// Запрос имени файла и расширения у пользователя
-	// fmt.Print("Введите имя для файла: ")
-	// nameFile, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	// nameFile = strings.TrimSpace(nameFile)
-	// fmt.Fprintf(conn, "%s\n", nameFile)
+	file, err := os.Open(filePath)
+	if err != nil {
+		log.Println("Ошибка открытия файла: ", err)
+		os.Exit(1)
+	}
+	size, _ := file.Stat()
+	sizeFile := size.Size()
+	defer file.Close()
 
-	// fmt.Print("Введите расширение файла: ")
-	// fileExtension, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	// fileExtension = strings.TrimSpace(fileExtension)
-	// fmt.Fprintf(conn, "%s\n", fileExtension)
+	reader := bufio.NewReader(file)
+	buffer := make([]byte, sizeFile)
 
-	// Запрос пути к файлу у пользователя
-	// fmt.Print("Выберите файл для загрузки: ")
-	// filePath, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	// filePath = strings.TrimSpace(filePath)
-
-	// file, err := os.Open(filePath)
-	// if err != nil {
-	// 	fmt.Println("Ошибка открытия файла:", err)
-	// 	return
-	// }
-	// defer file.Close()
-
-	// // Создание буфера для чтения файла
-	// buffer := make([]byte, chunkSize)
-	// writer := bufio.NewWriterSize(conn, chunkSize)
-
-	// for {
-	// 	n, err := file.Read(buffer)
-	// 	fmt.Println(n)
-	// 	if err != nil && err != io.EOF {
-	// 		log.Fatal(err)
-	// 	}
-	// 	if n == 0 {
-	// 		break
-	// 	}
-	// 	if err = binary.Write(writer, binary.LittleEndian, uint32(n)); err != nil {
-	// 		log.Fatal(err)
-	// 	}
-
-	// 	if _, err = conn.Write(buffer[:n]); err != nil {
-	// 		log.Fatal(err)
-	// 	}
-	// }
-
-	// fmt.Println("Файл загружен, ожидаем подтверждения от сервера...")
-
-	// confirmation, err := bufio.NewReader(conn).ReadString('\n')
-	// if err != nil {
-	// 	fmt.Println("Ошибка чтения подтверждения:", err)
-	// 	return
-	// }
-	// fmt.Println("Ответ сервера:", confirmation)
+	for {
+		n, err := reader.Read(buffer)
+		fmt.Println(n)
+		if err != nil {
+			if err == io.EOF {
+				break // Конец файла
+			}
+			log.Println("Ошибка чтения куска файла: ", err)
+			os.Exit(1)
+		}
+		_, err = conn.Write(buffer[:n])
+		if err != nil {
+			log.Println("Ошибка записи на сервер: ", err)
+		}
+	}
 }

@@ -3,28 +3,16 @@ package commander
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
+	"strings"
+
+	"github.com/google/uuid"
 )
 
-// const (
-// 	chunkSize = 4096 // Размер каждой части файла
-// )
-
-// var mu sync.Mutex
-
-// type File struct {
-// 	ID   uuid.UUID
-// 	Name string
-// 	Path string
-// }
-
-// var files []File
-
-func Upload(conn net.Conn, reader *bufio.Reader) {
-
-	// Проверяем или создаем директорию для сохранения файлов, если ее нет
+func Upload(conn net.Conn) {
 	_, err := os.Stat("uploads")
 	if os.IsNotExist(err) {
 		err := os.Mkdir("uploads", os.ModePerm)
@@ -32,92 +20,47 @@ func Upload(conn net.Conn, reader *bufio.Reader) {
 			log.Fatal(err)
 		}
 	}
-	info := "Ответ от сервера\n"
-	if _, err = conn.Write([]byte(info)); err != nil {
-		log.Println("Ошибка на стороне сервера: ", err)
-		return
+	id := uuid.New()
+
+	infoUpload := "Введите имя файла для сохранения: \n"
+	if _, err := conn.Write([]byte(infoUpload)); err != nil {
+		log.Println("Ошибка записи имени файла: ", err)
 	}
 
-	client_info, err := reader.ReadString('\n')
+	name := bufio.NewReader(conn)
+	nameFile, err := name.ReadString('\n')
 	if err != nil {
-		log.Println("Ошибка чтания от клиента")
+		log.Println("Ошибка при сохранении имени файла")
 	}
-	fmt.Println(client_info)
+	nameFile = strings.TrimSpace(nameFile)
 
-	// Генерация UUID для файла
-	// id := uuid.New()
+	uploadFile := "Введите путь до файла \n"
+	if _, err = conn.Write([]byte(uploadFile)); err != nil {
+		log.Println("Такого файла не существует или другая ошибка ", err)
+	}
 
-	// // Запрашиваем имя для файла
-	// nameFile, err := reader.ReadString('\n')
-	// if err != nil {
-	// 	log.Println("Ошибка чтения имени файла:", err)
-	// 	return
-	// }
-	// nameFile = strings.TrimSpace(nameFile)
-	// if nameFile == "" {
-	// 	log.Println("Имя файла не может быть пустым")
-	// 	return
-	// }
+	filePath := fmt.Sprintf("uploads/%s.jpeg", id.String())
+	file, err := os.Create(filePath)
+	if err != nil {
+		log.Println("Ошибка при создании файла: ", err)
+	}
+	defer file.Close()
 
-	// // Запрашиваем расширение для файла
-	// fileExtension, err := reader.ReadString('\n')
-	// if err != nil {
-	// 	log.Println("Ошибка чтения расширения файла:", err)
-	// 	return
-	// }
-	// fileExtension = strings.TrimSpace(fileExtension)
-	// if fileExtension == "" {
-	// 	log.Println("Расширение файла не может быть пустым")
-	// 	return
-	// }
+	WriteFile(id, nameFile, filePath)
+	// fmt.Println(newFile)
 
-	// // Создание файла
-	// filePath := fmt.Sprintf("uploads/%s.jpeg", id.String())
-	// file, err := os.Create(filePath)
-	// if err != nil {
-	// 	log.Println("Ошибка создания файла:", err)
-	// 	return
-	// }
-	// defer file.Close()
+	done := make(chan error)
 
-	// fileInstance := File{
-	// 	ID:   id,
-	// 	Name: id.String(),
-	// 	Path: filePath,
-	// }
-
-	// mu.Lock()
-	// files = append(files, fileInstance)
-	// mu.Unlock()
-
-	// fmt.Println(reader.Size())
-
-	// buffer := make([]byte, chunkSize)
-	// var size uint32
-
-	// if size > chunkSize {
-	// 	log.Println("Ошибка: размер части файла превышает размер буфера")
-	// 	// os.Remove(filePath) // Удаление файла при ошибке
-	// 	fmt.Println("Ошибка: размер части файла превышает размер буфера")
-	// 	return
-	// }
-
-	// if _, err := io.ReadFull(reader, buffer[:size]); err != nil {
-	// 	log.Println("Ошибка чтения части файла: ", err)
-	// 	// os.Remove(filePath) // Удаление файла при ошибке
-	// 	fmt.Println("Ошибка чтения части файла")
-	// 	return
-	// }
-
-	// if _, err := file.Write(buffer[:size]); err != nil {
-	// 	log.Println("Ошибка записи части файла: ", err)
-	// 	// os.Remove(filePath) // Удаление файла при ошибке
-	// 	return
-	// }
-	// confirmation := "Файл успешно загружен\n"
-	// if _, err := conn.Write([]byte(confirmation)); err != nil {
-	// 	log.Println("Ошибка отправки подтверждения:", err)
-	// 	return
-	// }
-	log.Println("Подтверждение отправлено клиенту")
+	writer1 := bufio.NewWriter(file)
+	reader1 := bufio.NewReader(conn)
+	go func() {
+		_, err := io.CopyN(writer1, reader1, 121978)
+		done <- err
+	}()
+	err = <-done
+	if err != nil && err != io.EOF {
+		fmt.Println("Error during copy:", err)
+	} else {
+		fmt.Println("Copy completed successfully")
+	}
 }

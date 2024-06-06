@@ -1,93 +1,38 @@
 package main
 
 import (
-	"bufio"
-	"fmt"
-	"io"
+	"file_transfer/server/handler"
 	"log"
 	"net"
-	"strings"
-)
+	"os"
 
-var (
-	host     = "localhost"
-	port     = "8000"
-	typeServ = "tcp"
-	// mu       sync.Mutex
+	"github.com/joho/godotenv"
 )
-
-func init() {
-	fmt.Println("Woo")
-}
 
 func main() {
-	// создание соединения
-	listener, err := net.Listen(typeServ, host+":"+port)
+	if err := godotenv.Load(); err != nil {
+		log.Println("Ошибка загрузки .env: ", err)
+		os.Exit(1)
+	}
+
+	HOST := os.Getenv("HOST")
+	PORT := os.Getenv("PORT")
+	TYPE := os.Getenv("TYPE")
+
+	listen, err := net.Listen(TYPE, HOST+":"+PORT)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Проблемы при создании подключения: ", err)
+		os.Exit(1)
 	}
-	defer listener.Close()
+	defer listen.Close()
 
-	log.Printf("Server started on %s:%s\n", host, port)
-
-	// Подключение
 	for {
-		conn, err := listener.Accept()
+		conn, err := listen.Accept()
 		if err != nil {
-			log.Println(err)
-			continue
-		}
-		go handleConnection(conn)
-	}
-}
-
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
-
-	reader := bufio.NewReader(conn)
-	for {
-		question_server := "Введите команду (upload, download, exit, all_file): \n"
-		if _, err := conn.Write([]byte(question_server)); err != nil {
-			log.Println("Ошибка написания команды, ", err)
+			log.Fatal("Проблемы при запуске сервера: ", err)
+			os.Exit(1)
 		}
 
-		command, err := reader.ReadString('\n')
-		if err != nil {
-			if err != io.EOF {
-				log.Println("Ошибка чтения команды:", err)
-			}
-			return
-		}
-		command = strings.TrimSpace(command)
-
-		switch command {
-		case "upload":
-			// commander.Upload(conn, reader)
-			log.Println("Upload command cloused")
-		case "download":
-			// download(conn, reader)
-			log.Println("Download command cloused")
-			continue
-		case "all_files":
-			all_files(conn, reader)
-			continue
-		default:
-			// log.Println("Неизвестная команда:", command)
-			continue
-		}
+		go handler.HandlerRequest(conn)
 	}
-}
-
-func all_files(conn net.Conn, reader *bufio.Reader) {
-	c := "Ответ от сервера: Hello all files\n"
-	if _, err := conn.Write([]byte(c)); err != nil {
-		log.Println("Ошибка на стороне сервера: ", err)
-		return
-	}
-	answer_client, err := reader.ReadString('\n')
-	if err != nil {
-		log.Println("Ошибка чтения данных от клиента", err)
-	}
-	fmt.Println(answer_client)
-
 }
